@@ -1,3 +1,11 @@
-# Chatbot
 gradio>=5.0.0
 GitPython>=3.1.0
+langchain>=0.3.0
+langchain-community>=0.3.0
+langchain-huggingface>=0.1.0
+chromadb>=0.5.0
+sentence-transformers>=3.0.0
+huggingface-hub>=0.25.0
+supabase>=2.0.0
+requests>=2.32.0
+beautifulsoup4>=4.12.0
