@@ -1,11 +1,13 @@
 """
-Dune Chatbot - Con RAG + ChromaDB + APIs de datos
+Dune Chatbot - Sistema RAG completo
+Carga documentos desde GitHub + ChromaDB + APIs de datos
 """
 
 import os
 import sys
 import logging
 from git import Repo
+import requests
 
 # Configurar logging
 logging.basicConfig(
@@ -15,210 +17,292 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 # ============================================
-# CLONAR RAG DESDE GITHUB
+# CONFIGURACIÓN
 # ============================================
 
+GITHUB_ORG = "DUNE-ORGANIZATION-JJCA"
+DOCUMENTOS_REPO = "Dune-Documentacion"
 RAG_BASE = "/tmp/dune_rag"
-RAG_DIR = os.path.join(RAG_BASE, "rag")
+CHROMA_DIR = "/tmp/chroma_db"
 
-def clone_rag():
-    """Clona el RAG desde GitHub"""
-    if not os.path.exists(RAG_BASE):
-        logger.info("Clonando Dune-RAG desde GitHub...")
-        try:
-            Repo.clone_from(
-                "https://github.com/DUNE-ORGANIZATION-JJCA/Dune-RAG.git",
-                RAG_BASE,
-                depth=1
-            )
-            logger.info("Dune-RAG clonado")
-            return True
-        except Exception as e:
-            logger.error(f"Error: {e}")
-            return False
-    return True
-
-clone_rag()
-
-if os.path.exists(RAG_DIR):
-    sys.path.insert(0, RAG_DIR)
+# Credenciales (NO exponer en producción)
+SUPABASE_URL = "https://jshzonryarokhquoazmy.supabase.co"
+SUPABASE_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImpzaHpvbnJ5YXJva2hxdW9hem15Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzY2OTM2NDIsImV4cCI6MjA5MjI2OTY0Mn0.wOrhlsEHnFUHmrB0Hr85QR8rck6cDqr7CxAeae9vJj4"
+NEON_CONN = "postgresql://neondb_owner:npg_u4HxQmsKZMG1@ep-jolly-glade-alwj6pos-pooler.c-3.eu-central-1.aws.neon.tech/neondb?sslmode=require"
 
 # ============================================
-# IMPORTAR RAG y CHROMADB
+# CARGAR DOCUMENTOS DESDE GITHUB
 # ============================================
 
-RAG_AVAILABLE = False
-CHROMA_AVAILABLE = False
-vector_store = None
+def get_github_file(repo: str, path: str) -> str:
+    """Obtiene archivo desde GitHub API"""
+    url = f"https://api.github.com/repos/{GITHUB_ORG}/{repo}/contents/{path}"
+    try:
+        response = requests.get(url, timeout=30, headers={"User-Agent": "Dune-Chatbot"})
+        if response.status_code == 200:
+            import base64
+            data = response.json()
+            content = data.get("content", "")
+            if content:
+                return base64.b64decode(content).decode("utf-8")
+    except Exception as e:
+        logger.error(f"Error getting {path}: {e}")
+    return None
 
-try:
-    # Importar componentes RAG
-    from loader import GitHubLoader, DuneConfig, REPO_FILES
-    from chunker import TextChunker
-    from retriever import VectorRetriever
-    from generator import ResponseGenerator, GeneratorConfig
+def load_game_documents():
+    """Carga documentos del juego desde GitHub"""
+    documents = []
     
-    # Intentar inicializar ChromaDB
+    # Archivos de documentación del juego
+    files = [
+        ("Dune-Documentacion", "Dune_Arrakis_Dominion_Storytelling.md"),
+        ("Dune-Documentacion", "Dune_Arrakis_Dominion_Manual_Tecnico.md"),
+        ("Dune-Documentacion", "Dune_Arrakis_Dominion_GDD_Recursos.md"),
+    ]
+    
+    logger.info("Cargando documentos del juego...")
+    
+    for repo, path in files:
+        content = get_github_file(repo, path)
+        if content:
+            # Extraer título del documento
+            title = path.replace(".md", "").replace("_", " ")
+            documents.append({
+                "title": title,
+                "content": content[:5000]  # Limitar tamaño
+            })
+            logger.info(f"Cargado: {path}")
+    
+    return documents
+
+# ============================================
+# CHROMADB
+# ============================================
+
+CHROMA_AVAILABLE = False
+collection = None
+
+def init_chromadb():
+    """Inicializa ChromaDB y carga documentos"""
+    global collection, CHROMA_AVAILABLE
+    
     try:
         import chromadb
         from chromadb.config import Settings
+        from sentence_transformers import SentenceTransformer
         
-        # Inicializar ChromaDB
+        # Crear cliente
         chroma_client = chromadb.Client(Settings(
-            persist_directory="/tmp/chroma_db",
+            persist_directory=CHROMA_DIR,
             anonymized_telemetry=False
         ))
         
         # Crear o obtener colección
         try:
             collection = chroma_client.get_collection("dune_knowledge")
+            logger.info("Colección ChromaDB obtenida")
         except:
             collection = chroma_client.create_collection("dune_knowledge")
+            logger.info("Colección ChromaDB creada")
+        
+        # Cargar documentos si colección vacía
+        if collection.count() == 0:
+            logger.info("Cargando documentos en ChromaDB...")
+            
+            # Cargar documentos del juego
+            docs = load_game_documents()
+            
+            if docs:
+                # Crear embeddings
+                model = SentenceTransformer('all-MiniLM-L6-v2')
+                texts = [d["content"] for d in docs]
+                titles = [d["title"] for d in docs]
+                
+                # Generar embeddings
+                embeddings = model.encode(texts, show_progress_bar=True)
+                
+                # Añadir a ChromaDB
+                collection.add(
+                    documents=texts,
+                    ids=[f"doc_{i}" for i in range(len(texts))],
+                    metadatas=[{"title": t} for t in titles]
+                )
+                
+                logger.info(f"Documentos guardados en ChromaDB: {len(docs)}")
         
         CHROMA_AVAILABLE = True
-        logger.info("ChromaDB inicializado")
+        logger.info("ChromaDB inicializado correctamente")
         
     except Exception as e:
         logger.error(f"Error ChromaDB: {e}")
-    
-    RAG_AVAILABLE = True
-    logger.info("RAG importado")
-    
-except Exception as e:
-    logger.error(f"Error importando RAG: {e}")
-    raise
+        CHROMA_AVAILABLE = False
+
+# Inicializar ChromaDB
+init_chromadb()
 
 # ============================================
-# CARGAR DATOS DESDE BASES DE DATOS
+# CONSULTAS A BASES DE DATOS
 # ============================================
 
-def load_supabase_data():
-    """Carga datos desde Supabase Dashboard"""
+def get_supabase_stats():
+    """Obtiene estadísticas de Supabase Dashboard"""
     try:
         import supabase
         
-        url = "https://jshzonryarokhquoazmy.supabase.co"
-        key = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImpzaHpvbnJ5YXJva2hxdW9hem15Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzY2OTM2NDIsImV4cCI6MjA5MjI2OTY0Mn0.wOrhlsEHnFUHmrB0Hr85QR8rck6cDqr7CxAeae9vJj4"
+        client = supabase.create_client(SUPABASE_URL, SUPABASE_KEY)
         
-        client = supabase.create_client(url, key)
-        
-        # Obtener estadísticas
+        # Contar registros
         try:
-            respuesta = client.table("registros_beta").select("*", count="exact").execute()
-            registros = respuesta.count or 0
-            logger.info(f"Registros beta: {registros}")
-            return f"Total registros en beta: {registros}"
+            r1 = client.table("registros_beta").select("*", count="exact").execute()
+            registros = r1.count or 0
         except:
-            return "No hay datos de registros"
-            
+            registros = 0
+        
+        # Contar sesiones
+        try:
+            r2 = client.table("sesiones_web").select("*", count="exact").execute()
+            sesiones = r2.count or 0
+        except:
+            sesiones = 0
+        
+        return f"Registros en beta: {registros}, Sesiones: {sesiones}"
+        
     except Exception as e:
         logger.error(f"Error Supabase: {e}")
-        return None
+        return "No disponible"
 
-def load_campaign_data():
-    """Carga datos desde Neon Campaign"""
+def get_campaign_stats():
+    """Obtiene estadísticas de Campaign (Neon)"""
     try:
         import psycopg2
         
-        conn_string = "postgresql://neondb_owner:npg_u4HxQmsKZMG1@ep-jolly-glade-alwj6pos-pooler.c-3.eu-central-1.aws.neon.tech/neondb?sslmode=require"
+        conn = psycopg2.connect(NEON_CONN)
+        cur = conn.cursor()
         
         try:
-            conn = psycopg2.connect(conn_string)
-            cur = conn.cursor()
             cur.execute("SELECT COUNT(*) FROM registros")
             count = cur.fetchone()[0]
-            cur.close()
-            conn.close()
-            logger.info(f"Campaign: {count} registros")
-            return f"Datos de campaña: {count} registros"
-        except Exception as e:
-            logger.error(f"Error Neon: {e}")
-            return "No hay datos de campaña"
+        except:
+            count = "No accesible"
+        
+        cur.close()
+        conn.close()
+        
+        return f"Campaign: {count} registros"
+        
     except Exception as e:
-        logger.error(f"Error carga campaña: {e}")
-        return None
+        logger.error(f"Error Campaign: {e}")
+        return "No disponible"
 
-# Cargar datos al iniciar
-SUPABASE_INFO = load_supabase_data()
-CAMPAIGN_INFO = load_campaign_data()
+# Cargar stats al iniciar
+STATS_SUPABASE = get_supabase_stats()
+STATS_CAMPAIGN = get_campaign_stats()
+
+logger.info(f"Stats Supabase: {STATS_SUPABASE}")
+logger.info(f"Stats Campaign: {STATS_CAMPAIGN}")
 
 # ============================================
-# BUSCADOR EN CHROMADB
+# RESPUESTAS DEL CHATBOT
 # ============================================
 
-def search_knowledge(query: str) -> str:
+def search_chromadb(query: str, n=3) -> str:
     """Busca en ChromaDB"""
-    if not CHROMA_AVAILABLE:
+    if not CHROMA_AVAILABLE or collection is None:
         return None
     
     try:
-        # Buscar documentos similares
         results = collection.query(
             query_texts=[query],
-            n_results=3
+            n_results=n
         )
         
         if results and results.get('documents'):
             docs = results['documents'][0]
             if docs:
-                return "\n\n".join(docs[:3])
-        return None
+                return "\n\n".join([d[:800] for d in docs if d])
     except Exception as e:
         logger.error(f"Error search: {e}")
-        return None
-
-# ============================================
-# RESPUESTAS
-# ============================================
-
-GREETING = """🤖 ¡Bienvenido a Dune Bot!
-
-Soy el asistente oficial de Dune: Arrakis Dominion.
-Puedo ayudarte con información del juego, estadísticas de la campaña, y más.
-"""
-
-INFO = {
-    "juego": "Dune: Arrakis Dominion es un juego de estrategia y gestión de recursos ambientado en Dune.",
-    "especia": "La Melange (especia) es el recurso más valioso del universo, solo se encuentra en Arrakis.",
-    "houses": "Las Grandes Casas: Atreides, Harkonnen, Corrino, y muchas Casas Menores.",
-    "arrakis": "Arrakis es el tercer planeta del sistema Canopus, el planeta desértico.",
-    "fremen": "Los Fremen son los habitantes nativos del desierto de Arrakis.",
-    "dashboard": f"Información del dashboard: {SUPABASE_INFO if SUPABASE_INFO else 'No disponible'}",
-    "campaña": f"Información de campaña: {CAMPAIGN_INFO if CAMPAIGN_INFO else 'No disponible'}",
-}
+    
+    return None
 
 def get_response(question: str, history=None) -> str:
     """Responde preguntas"""
     q = question.lower()
     
-    # Buscar en respuestas básicas
-    for key, value in INFO.items():
-        if key in q:
-            return value
+    # === CONSULTAS ESPECÍFICAS ===
     
-    # Buscar en ChromaDB
-    if CHROMA_AVAILABLE:
-        result = search_knowledge(q)
+    # Dashboard / Beta
+    if "beta" in q or "registro" in q or "dashboard" in q:
+        return f"📊 Datos del Dashboard: {STATS_SUPABASE}"
+    
+    # Campaña
+    if "campaña" in q or "campania" in q or "campaign" in q:
+        return f"📈 Datos de Campaña: {STATS_CAMPAIGN}"
+    
+    # Juego / Historia / Lore
+    if "juego" in q or "sobre" in q:
+        result = search_chromadb("juego Arrakis Dominion")
         if result:
-            return result
+            return f"🎮 {result}"
     
-    # Si RAG disponible
-    if RAG_AVAILABLE:
-        return "Información cargada desde RAG de GitHub!"
+    # Especia
+    if "especia" in q or "melange" in q:
+        result = search_chromadb("especia Melange Arrakis")
+        if result:
+            return f"🌟 {result}"
     
-    return GREETING
+    # Casas
+    if "casa" in q or "houses" in q or "atreides" in q or "harkonnen" in q:
+        result = search_chromadb("Great Houses Atreides Harkonnen")
+        if result:
+            return f"🏰 {result}"
+    
+    # Fremen
+    if "fremen" in q:
+        result = search_chromadb("Fremen Arrakis")
+        if result:
+            return f"🏜️ {result}"
+    
+    # Recursos / Mecánicas
+    if "recurso" in q or "mecanica" in q or "recurso" in q:
+        result = search_chromadb("recursos sistema producción")
+        if result:
+            return f"⚙️ {result}"
+    
+    # Búsqueda general en ChromaDB
+    result = search_chromadb(q)
+    if result:
+        return result
+    
+    # === RESPUESTA POR DEFECTO ===
+    return """🤖 ¡Bienvenido a Dune Bot!
 
-# Gradio
+Soy el asistente oficial de Dune: Arrakis Dominion.
+
+Puedo ayudarte con:
+- 📚 Historia y lore del universo Dune
+- 🎮 Mecánicas y reglas del juego
+- 📊 Estadísticas del dashboard (beta)
+- 📈 Datos de la campaña
+- 🏰 Las Grandes Casas
+
+¡Pregúntame lo que quieras!"""
+
+# ============================================
+# INTERFAZ GRADIO
+# ============================================
+
 import gradio as gr
 
 gr.ChatInterface(
     fn=get_response,
-    title="🤖 Dune Bot",
-    description="Asistente de Dune: Arrakis Dominion",
+    title="🤖 Dune Bot - Arrakis Dominion",
+    description="Asistente oficial del juego Dune: Arrakis Dominion",
     examples=[
         "¿De qué trata el juego?",
         "¿Qué es la especia?",
         "¿Cuántos registros hay en la beta?",
         "¿Cómo va la campaña?",
+        "Dime sobre las Grandes Casas",
     ]
 ).launch(server_name="0.0.0.0", server_port=7860)
