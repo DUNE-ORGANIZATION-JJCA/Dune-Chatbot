@@ -18,16 +18,17 @@ logger = logging.getLogger(__name__)
 # CLONAR RAG DESDE GITHUB
 # ============================================
 
-RAG_PATH = "/tmp/dune_rag"
+RAG_BASE = "/tmp/dune_rag"
+RAG_DIR = os.path.join(RAG_BASE, "rag")
 
 def clone_rag():
     """Clona el RAG desde GitHub"""
-    if not os.path.exists(RAG_PATH):
+    if not os.path.exists(RAG_BASE):
         logger.info("Clonando Dune-RAG desde GitHub...")
         try:
             Repo.clone_from(
                 "https://github.com/DUNE-ORGANIZATION-JJCA/Dune-RAG.git",
-                RAG_PATH,
+                RAG_BASE,
                 depth=1
             )
             logger.info("Dune-RAG clonado correctamente")
@@ -38,23 +39,24 @@ def clone_rag():
     return True
 
 # Intentar clonar
-cloned = clone_rag()
+clone_rag()
 
-# Añadir al path
-if cloned and os.path.exists(RAG_PATH):
-    sys.path.insert(0, RAG_PATH)
+# Añadir path del RAG
+if os.path.exists(RAG_DIR):
+    sys.path.insert(0, RAG_DIR)
 
+# ============================================
 # IMPORTAR RAG
+# ============================================
+
+RAG_AVAILABLE = False
 try:
-    from rag import_loader as loader_module
-    from rag import_textchunker as chunker_module
-    from rag import_vectorretriever as retriever_module
-    from rag import_responsegenerator as generator_module
+    from loader import GitHubLoader, DuneConfig, REPO_FILES
     logger.info("RAG importado correctamente")
     RAG_AVAILABLE = True
 except Exception as e:
     logger.error(f"Error importando RAG: {e}")
-    RAG_AVAILABLE = False
+    raise
 
 # ============================================
 # RESPUESTAS
@@ -63,33 +65,30 @@ except Exception as e:
 GREETING = """🤖 ¡Bienvenido a Dune Bot!
 
 Soy el asistente de Dune: Arrakis Dominion.
-Puedo ayudarte sobre el juego, historia, y más.
 """
 
 INFO = {
-    "juego": "Dune: Arrakis Dominion es un juego de estrategia ambientado en Dune. Controlas una Casa Menor en Arrakis.",
-    "especia": "La Melange es el recurso más valioso del universo, solo se encuentra en Arrakis.",
-    "houses": "Las Grandes Casas: Atreides, Harkonnen, Corrino, y muchas más.",
-    "arrakis": "Arrakis es el tercer planeta del sistema Canopus, el planeta desértico.",
-    "fremen": "Los Fremen son los habitantes nativos del desierto de Arrakis.",
+    "juego": "Dune: Arrakis Dominion es un juego de estrategia ambientado en Dune.",
+    "especia": "La Melange es el recurso más valioso, solo se encuentra en Arrakis.",
+    "houses": "Las Grandes Casas: Atreides, Harkonnen, Corrino.",
+    "arrakis": "Arrakis es el planeta desértico donde se produce la Especia.",
+    "fremen": "Los Fremen son los habitantes nativos del desierto.",
 }
 
 def get_response(question: str) -> str:
     """Responde preguntas"""
     q = question.lower()
     
-    # Buscar en respuestas básicas
     for key, value in INFO.items():
         if key in q:
             return value
     
-    # Si RAG está disponible, lo usamos
     if RAG_AVAILABLE:
-        return "Información cargada desde RAG de GitHub!"
+        return "RAG conectado desde GitHub! Puedo ayudarte más."
     
     return GREETING
 
-# Gradio interface
+# Gradio
 import gradio as gr
 
 gr.ChatInterface(
