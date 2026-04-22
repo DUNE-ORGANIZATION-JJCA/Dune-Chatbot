@@ -150,12 +150,12 @@ Respuesta:"""
             }
         }
         
-        # Usar API de推理
+        # Usar modelo Llama 3.1 (más reciente y melhor)
         response = requests.post(
             "https://api-inference.huggingface.co/models/meta-llama/Llama-3.1-8B-Instruct",
             headers=headers,
             json=payload,
-            timeout=60
+            timeout=90
         )
         
         if response.status_code == 200:
