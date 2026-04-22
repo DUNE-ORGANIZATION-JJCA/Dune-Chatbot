@@ -1,0 +1,10 @@
+{
+  "title": "Dune Chatbot",
+  "emoji": "🤖",
+  "colorFrom": "yellow",
+  "colorTo": "orange",
+  "sdk": "gradio",
+  "sdk_version": "5.0.0",
+  "app_file": "app.py",
+  "pip_requirements": "gradio>=5.0.0\nGitPython>=3.1.0\nlangchain>=0.3.0\nlangchain-community>=0.3.0\nlangchain-huggingface>=0.1.0\nchromadb>=0.5.0\nsentence-transformers>=3.0.0\nhuggingface-hub>=0.25.0\nsupabase>=2.0.0\nrequests>=2.32.0\nbeautifulsoup4>=4.12.0"
+}
