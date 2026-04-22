@@ -140,6 +140,17 @@ def get_llm_response(query: str) -> str:
     if not context:
         return None
     
+    # Crear prompt
+    prompt = f"""Eres el asistente de Dune: Arrakis Dominion.
+Responde en español, máximo 3 oraciones cortas.
+
+CONTEXTO:
+{context}
+
+Pregunta: {query}
+
+Respuesta:"""
+
     try:
 # Usar Mistral (modelo más abierto)
         response = requests.post(
