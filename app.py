@@ -25,37 +25,31 @@ logger = logging.getLogger(__name__)
 
 def install_rag_from_github():
     """Instala el RAG desde GitHub como paquete pip"""
+    import subprocess
+    import sys
+    
     try:
-        # Intentar instalar directamente desde GitHub
-        subprocess.run(
-            ["pip", "install", "git+https://github.com/DUNE-ORGANIZATION-JJCA/Dune-RAG.git"],
+        # Instalar como paquete editable desde GitHub
+        result = subprocess.run(
+            [sys.executable, "-m", "pip", "install", "git+https://github.com/DUNE-ORGANIZATION-JJCA/Dune-RAG.git", "--quiet", "--no-deps"],
             capture_output=True,
+            text=True,
             timeout=120
         )
-        logger.info("Dune-RAG instalado correctamente")
+        if result.returncode == 0:
+            logger.info("Dune-RAG instalado correctamente")
+        else:
+            logger.warning(f"Error instalando RAG: {result.stderr}")
+            raise Exception("Install failed")
     except Exception as e:
         logger.error(f"Error instalando RAG: {e}")
-        # Fallback: intentar clonar
-        try:
-            from git import Repo
-            dune_rag_path = os.path.join(os.path.dirname(__file__), "dune_rag")
-            if not os.path.exists(dune_rag_path):
-                Repo.clone_from(
-                    "https://github.com/DUNE-ORGANIZATION-JJCA/Dune-RAG.git",
-                    dune_rag_path,
-                    depth=1
-                )
-            if dune_rag_path not in sys.path:
-                sys.path.insert(0, dune_rag_path)
-            logger.info("Dune-RAG clonado como fallback")
-        except Exception as e2:
-            logger.error(f"Error en fallback: {e2}")
+        raise
 
 # Intentar instalar primero
 try:
     install_rag_from_github()
-except:
-    pass
+except Exception as e:
+    logger.warning(f"Instalación automática falló: {e}")
 
 # Importar componentes RAG
 try:
@@ -69,17 +63,10 @@ try:
         RetrieverConfig,
         GeneratorConfig
     )
+    logger.info("RAG importado correctamente")
 except ImportError as e:
     logger.error(f"Error importando RAG: {e}")
-    # Intentar path local
-    local_rag = os.path.join(os.path.dirname(__file__), "dune_rag")
-    if os.path.exists(local_rag):
-        sys.path.insert(0, local_rag)
-        from rag import (
-            DuneConfig, GitHubLoader, TextChunker,
-            VectorRetriever, ResponseGenerator, REPO_FILES,
-            RetrieverConfig, GeneratorConfig
-        )
+    raise
 
 # Importar Gradio
 import gradio as gr
