@@ -1,0 +1,18 @@
+name: Sync to Hugging Face hub
+
+on:
+  push:
+    branches: [main]
+
+jobs:
+  sync-to-hub:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      
+      - name: Push to hub
+        env:
+          HF_TOKEN: ${{ secrets.HF_TOKEN }}
+        run: |
+          pip install huggingface_hub
+          git push https://ItsJpmJpm:$HF_TOKEN@huggingface.co/spaces/ItsJpmJpm/dune-chatbot main
