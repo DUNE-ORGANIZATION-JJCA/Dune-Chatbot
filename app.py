@@ -1,10 +1,12 @@
 """
-Dune Chatbot - Versión simple sin RAG externo
-Usa datos básicos embebidos
+Dune Chatbot - Con RAG desde GitHub
 """
 
 import os
+import sys
 import logging
+import subprocess
+from git import Repo
 
 # Configurar logging
 logging.basicConfig(
@@ -13,49 +15,76 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
-# Simple greeting + basic info
-GREETING = """
-🤖 ¡Bienvenido a Dune Bot!
+# ============================================
+# CLONAR RAG DESDE GITHUB
+# ============================================
 
-Soy el asistente oficial de Dune: Arrakis Dominion.
+RAG_PATH = os.path.join(os.path.dirname(__file__), "dune_rag")
 
-Puedo ayudarte con:
-- 🌍 Historia y lore del universo Dune
-- 🎮 Mecánicas y desarrollo del juego
-- 📖 Documentación técnica
+def clone_rag():
+    """Clona el RAG desde GitHub"""
+    if not os.path.exists(RAG_PATH):
+        logger.info("Clonando Dune-RAG...")
+        try:
+            Repo.clone_from(
+                "https://github.com/DUNE-ORGANIZATION-JJCA/Dune-RAG.git",
+                RAG_PATH,
+                depth=1
+            )
+            logger.info("Dune-RAG clonado")
+        except Exception as e:
+            logger.error(f"Error: {e}")
 
-Pregúntame lo que quieras sobre el juego.
+# Intentar clonar
+try:
+    clone_rag()
+except:
+    pass
+
+# Añadir al path
+if RAG_PATH in sys.path:
+    sys.path.insert(0, RAG_PATH)
+
+# Intentar importar
+try:
+    if os.path.exists(RAG_PATH):
+        sys.path.insert(0, RAG_PATH)
+        from rag import_loader as rag_loader
+        logger.info("RAG importado")
+except Exception as e:
+    logger.error(f"Error importando RAG: {e}")
+    rag_loader = None
+
+# ============================================
+# RESPUESTAS
+# ============================================
+
+GREETING = """🤖 ¡Bienvenido a Dune Bot!
+
+Soy el asistente de Dune: Arrakis Dominion.
+Puedo ayudarte sobre el juego, historia, y más.
 """
 
-# Basic responses
-BASIC_INFO = {
-    "juego": "Dune: Arrakis Dominion es un juego de estrategia y gestión de recursos ambientado en el universo de Dune. Controlas una Casa Menor en Arrakis.",
-    "especia": "La Melange (especia) es el recurso más valioso del universo. Solo se encuentra en Arrakis y extiende la vida consciente.",
-    "houses": "Las Grandes Casas incluyen: Atreides, Harkonnen, Corrino, y muchas Casas Menores.",
-    "arrakis": "Arrakis es el tercer planeta del sistema Canopus, el único lugar donde se produce la Especia.",
-    "fremen": "Los Fremen son los habitantes nativos del desierto de Arrakis.",
+INFO = {
+    "juego": "Dune: Arrakis Dominion es un juego de estrategia ambientado en Dune. Controlas una Casa Menor en Arrakis.",
+    "especia": "La Melange es el recurso más valioso, solo se encuentra en Arrakis.",
+    "houses": "Las Grandes Casas: Atreides, Harkonnen, Corrino, y más.",
+    "arrakis": "Arrakis es el planeta desértico donde se produce la Especia.",
+    "fremen": "Los Fremen son los nativos del desierto de Arrakis.",
 }
 
 def get_response(question: str) -> str:
-    """Get a simple response"""
-    question = question.lower()
-    
-    for key, value in BASIC_INFO.items():
-        if key in question:
-            return value
-    
+    q = question.lower()
+    for k, v in INFO.items():
+        if k in q:
+            return v
     return GREETING
 
-# Gradio interface
+# Gradio
 import gradio as gr
 
 gr.ChatInterface(
     fn=get_response,
     title="🤖 Dune Bot",
-    description="Asistente oficial de Dune: Arrakis Dominion",
-    examples=[
-        "¿De qué trata el juego?",
-        "¿Qué es la especia?",
-        "¿Who are the Great Houses?",
-    ]
+    description="Asistente de Dune: Arrakis Dominion"
 ).launch(server_name="0.0.0.0", server_port=7860)
