@@ -75,7 +75,7 @@ INFO = {
     "fremen": "Los Fremen son los habitantes nativos del desierto.",
 }
 
-def get_response(question: str) -> str:
+def get_response(question: str, history=None) -> str:
     """Responde preguntas"""
     q = question.lower()
     
