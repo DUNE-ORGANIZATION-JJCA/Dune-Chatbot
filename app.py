@@ -141,22 +141,9 @@ def get_llm_response(query: str) -> str:
         return None
     
     try:
-        # Usar la API de chat con formato correcto
-        import requests
-        
-        # Prompt simple
-        prompt = f"""Eres el asistente de Dune: Arrakis Dominion.
-Responde en español, máximo 3 oraciones cortas.
-
-CONTEXTO:
-{context}
-
- pregunta: {query}
-
-Respuesta:"""
-        
+# Usar Mistral (modelo más abierto)
         response = requests.post(
-            "https://api-inference.huggingface.co/models/meta-llama/Llama-3.1-8B-Instruct",
+            "https://api-inference.huggingface.co/models/mistralai/Mistral-7B-Instruct-v0.2",
             headers={
                 "Authorization": f"Bearer {HF_TOKEN}",
                 "Content-Type": "application/json"
