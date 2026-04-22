@@ -1,12 +1,13 @@
 """
 Dune Chatbot - Aplicación principal con Gradio + RAG
 
-Importa RAG desde GitHub y usa HuggingFace para generar respuestas.
+Importa RAG desde GitHub como paquete pip y usa HuggingFace para generar respuestas.
 """
 
 import os
 import sys
 import logging
+import subprocess
 from typing import List, Dict, Any
 from dataclasses import dataclass
 
@@ -19,44 +20,66 @@ logger = logging.getLogger(__name__)
 
 
 # ============================================
-# IMPORTAR RAG DESDE GITHUB
+# INSTALAR RAG DESDE GITHUB
 # ============================================
 
-def import_rag_from_github():
-    """Clona el RAG desde GitHub si no existe localmente"""
-    from git import Repo
-    
-    dune_rag_path = os.path.join(os.path.dirname(__file__), "dune_rag")
-    
-    if not os.path.exists(dune_rag_path):
-        logger.info("Clonando Dune-RAG desde GitHub...")
+def install_rag_from_github():
+    """Instala el RAG desde GitHub como paquete pip"""
+    try:
+        # Intentar instalar directamente desde GitHub
+        subprocess.run(
+            ["pip", "install", "git+https://github.com/DUNE-ORGANIZATION-JJCA/Dune-RAG.git"],
+            capture_output=True,
+            timeout=120
+        )
+        logger.info("Dune-RAG instalado correctamente")
+    except Exception as e:
+        logger.error(f"Error instalando RAG: {e}")
+        # Fallback: intentar clonar
         try:
-            Repo.clone_from(
-                "https://github.com/DUNE-ORGANIZATION-JJCA/Dune-RAG.git",
-                dune_rag_path,
-                depth=1
-            )
-            logger.info("Dune-RAG clonado correctamente")
-        except Exception as e:
-            logger.error(f"Error clonado RAG: {e}")
-    
-    # Añadir al path
-    if dune_rag_path not in sys.path:
-        sys.path.insert(0, dune_rag_path)
+            from git import Repo
+            dune_rag_path = os.path.join(os.path.dirname(__file__), "dune_rag")
+            if not os.path.exists(dune_rag_path):
+                Repo.clone_from(
+                    "https://github.com/DUNE-ORGANIZATION-JJCA/Dune-RAG.git",
+                    dune_rag_path,
+                    depth=1
+                )
+            if dune_rag_path not in sys.path:
+                sys.path.insert(0, dune_rag_path)
+            logger.info("Dune-RAG clonado como fallback")
+        except Exception as e2:
+            logger.error(f"Error en fallback: {e2}")
 
-import_rag_from_github()
+# Intentar instalar primero
+try:
+    install_rag_from_github()
+except:
+    pass
 
 # Importar componentes RAG
-from rag import (
-    DuneConfig,
-    GitHubLoader,
-    TextChunker,
-    VectorRetriever,
-    ResponseGenerator,
-    REPO_FILES,
-    RetrieverConfig,
-    GeneratorConfig
-)
+try:
+    from rag import (
+        DuneConfig,
+        GitHubLoader,
+        TextChunker,
+        VectorRetriever,
+        ResponseGenerator,
+        REPO_FILES,
+        RetrieverConfig,
+        GeneratorConfig
+    )
+except ImportError as e:
+    logger.error(f"Error importando RAG: {e}")
+    # Intentar path local
+    local_rag = os.path.join(os.path.dirname(__file__), "dune_rag")
+    if os.path.exists(local_rag):
+        sys.path.insert(0, local_rag)
+        from rag import (
+            DuneConfig, GitHubLoader, TextChunker,
+            VectorRetriever, ResponseGenerator, REPO_FILES,
+            RetrieverConfig, GeneratorConfig
+        )
 
 # Importar Gradio
 import gradio as gr
