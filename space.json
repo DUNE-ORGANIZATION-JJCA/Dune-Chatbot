@@ -1,8 +1,1 @@
-{
-  "title": "Dune Chatbot",
-  "emoji": "🤖",
-  "colorFrom": "yellow",
-  "colorTo": "yellow",
-  "sdk": "gradio",
-  "app_file": "app.py"
-}
+{}
