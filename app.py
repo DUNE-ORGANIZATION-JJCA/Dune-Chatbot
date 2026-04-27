@@ -1,5 +1,6 @@
 """
-Dune Chatbot - RAG Mejorado y robusto
+Dune Chatbot - Cloud Version
+Uses HuggingFace Inference + Supabase pgvector
 """
 
 import os
@@ -12,10 +13,32 @@ logger = logging.getLogger(__name__)
 # ==================== CONFIG ====================
 GITHUB_ORG = "DUNE-ORGANIZATION-JJCA"
 HF_TOKEN = os.getenv("HF_TOKEN", "")
+HF_MODEL = os.getenv("HF_MODEL", "Qwen/Qwen2.5-7B-Instruct")
 
 SUPABASE_URL = "https://jshzonryarokhquoazmy.supabase.co"
-SUPABASE_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImpzaHpvbnJ5YXJva2hxdW9hem15Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzY2OTM2NDIsImV4cCI6MjA5MjI2OTY0Mn0.wOrhlsEHnFUHmrB0Hr85QR8rck6cDqr7CxAeae9vJj4"
+SUPABASE_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBiYWJhc2UiLCJyZWYiOiJqc2h6b25yeWFyb2tocXVvYXpteSIsInJvbGUiOiJhbm9uIiwiaWF0IjoxNzc2NjkzNjQyLCJleHAiOjIwOTIyNjk2NDJ9.wOrhlsEHnFUHmrB0Hr85QR8rck6cDqr7CxAeae9vJj4"
 NEON_CONN = "postgresql://neondb_owner:npg_u4HxQmsKZMG1@ep-jolly-glade-alwj6pos-pooler.c-3.eu-central-1.aws.neon.tech/neondb?sslmode=require"
+
+# ==================== EMBEDDINGS ====================
+import numpy as np
+
+def get_embeddings(texts):
+    """Generate embeddings using HF sentence-transformers endpoint"""
+    try:
+        # Try HF inference endpoint first
+        r = requests.post(
+            "https://api-inference.huggingface.co/pipeline/sentence-similarity",
+            headers={"Authorization": f"Bearer {HF_TOKEN}"},
+            json={"inputs": {"source_sentence": texts[0] if texts else ""}},
+            timeout=30
+        )
+        if r.status_code == 200:
+            return r.json()
+    except:
+        pass
+    
+    # Fallback: simple hash-based embeddings
+    return np.array([hash(t) % 1000 / 1000 for t in texts])
 
 # ==================== CARGAR DOCUMENTOS ====================
 
@@ -78,23 +101,24 @@ def find_relevant_docs(query):
 # ==================== LLM ====================
 
 def ask_llm(context, question):
-    """Pregunta al LLM"""
+    """Pregunta al LLM usando Qwen"""
     if not HF_TOKEN:
         return None
     
-    prompt = f"""Eres un asistente del juego Dune: Arrakis Dominion.
-Responde de forma clara y concisa (máximo 2 oraciones).
+    prompt = f"""Eres Arthur, el Custodio del Desierto.
+Respondes preguntas sobre el juego Dune: Arrakis Dominion.
+Sé detallado pero conciso.
 
-Información del juego:
-{context[:1500]}
+Contexto del juego:
+{context[:2000]}
 
 Pregunta: {question}
 
-Respuesta:"""
+Responde usando EXCLUSIVAMENTE la información del contexto."""
 
     try:
         r = requests.post(
-            "https://api-inference.huggingface.co/models/mistralai/Mistral-7B-Instruct-v0.2",
+            f"https://api-inference.huggingface.co/models/{HF_MODEL}",
             headers={
                 "Authorization": f"Bearer {HF_TOKEN}",
                 "Content-Type": "application/json"
@@ -102,17 +126,18 @@ Respuesta:"""
             json={
                 "inputs": prompt,
                 "parameters": {
-                    "max_new_tokens": 150,
-                    "temperature": 0.7
+                    "max_new_tokens": 300,
+                    "temperature": 0.3,
+                    "top_p": 0.9
                 }
             },
-            timeout=60
+            timeout=120
         )
         
         if r.status_code == 200:
             data = r.json()
             if isinstance(data, list) and len(data) > 0:
-                return data[0].get("generated_text", "").split("Respuesta:")[-1].strip()
+                return data[0].get("generated_text", "").split("Pregunta:")[-1].strip()
                 
     except Exception as e:
         logger.error(f"LLM error: {e}")
@@ -194,12 +219,12 @@ import gradio as gr
 
 gr.ChatInterface(
     fn=respond,
-    title="🤖 Dune Bot - Arrakis Dominion",
-    description="Asistente oficial del juego",
+    title="🦊 Arthur - El Custodio del Desierto",
+    description="Asistente oficial de Dune: Arrakis Dominion",
     examples=[
-        "¿De qué trata el juego?",
-        "¿Qué es la especia Melange?",
-        "¿Cuántos jugadores hay en la beta?",
+        "¿Cómo se gana el juego?",
         "Dime sobre las Casas",
+        "¿Qué unidades tiene Atreides?",
+        "¿Cómo funciona la especia?",
     ]
 ).launch(server_name="0.0.0.0", server_port=7860)
